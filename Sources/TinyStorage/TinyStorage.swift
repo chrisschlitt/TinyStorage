@@ -169,6 +169,33 @@ public final class TinyStorage: @unchecked Sendable {
         NotificationCenter.default.post(name: Self.didChangeNotification, object: self, userInfo: nil)
     }
     
+    public func storeOrThrowAsync(_ value: Codable?, forKey key: any TinyStorageKey) throws {
+        if let value {
+            // Encode the Codable object back to Data before storing in memory and on disk
+            let valueData: Data
+            
+            if let data = value as? Data {
+                // Given value is already of type Data, so use directly
+                valueData = data
+            } else {
+                valueData = try JSONEncoder().encode(value)
+            }
+            
+            dispatchQueue.async {
+                self.dictionaryRepresentation[key.rawValue] = valueData
+                
+                self.storeToDisk()
+            }
+        } else {
+            dispatchQueue.async {
+                self.dictionaryRepresentation.removeValue(forKey: key.rawValue)
+                self.storeToDisk()
+            }
+        }
+        
+        NotificationCenter.default.post(name: Self.didChangeNotification, object: self, userInfo: nil)
+    }
+    
     /// Stores a given value to disk (or removes if nil). Unlike `storeOrThrow` this function is akin to `set` in `UserDefaults` in that any errors thrown are discarded. If you would like more insight into errors see `storeOrThrow`.
     ///
     /// - Parameters:
@@ -177,6 +204,15 @@ public final class TinyStorage: @unchecked Sendable {
     public func store(_ value: Codable?, forKey key: any TinyStorageKey) {
         do {
             try storeOrThrow(value, forKey: key)
+        } catch {
+            logger.error("Error storing key: \(key.rawValue, privacy: .private), with value: \(String(describing: value), privacy: .private), with error: \(error)")
+            assertionFailure()
+        }
+    }
+    
+    public func storeAsync(_ value: Codable?, forKey key: any TinyStorageKey) {
+        do {
+            try storeOrThrowAsync(value, forKey: key)
         } catch {
             logger.error("Error storing key: \(key.rawValue, privacy: .private), with value: \(String(describing: value), privacy: .private), with error: \(error)")
             assertionFailure()
