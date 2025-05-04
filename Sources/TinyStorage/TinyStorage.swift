@@ -307,7 +307,7 @@ public final class TinyStorage: @unchecked Sendable {
                 return
             }
             
-            NotificationCenter.default.post(name: Self.didChangeNotification, object: self, userInfo: nil)
+//            NotificationCenter.default.post(name: Self.didChangeNotification, object: self, userInfo: nil)
         }
         
     }
