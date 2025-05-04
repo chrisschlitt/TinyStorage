@@ -277,6 +277,41 @@ public final class TinyStorage: @unchecked Sendable {
         NotificationCenter.default.post(name: Self.didChangeNotification, object: self, userInfo: nil)
     }
     
+    public func resetAsync() {
+        guard !Self.isBeingUsedInXcodePreview else { return }
+        
+        
+        dispatchQueue.async {
+            
+            let coordinator = NSFileCoordinator()
+            var coordinatorError: NSError?
+            var successfullyRemoved = false
+            
+            coordinator.coordinate(writingItemAt: self.fileURL, options: [.forDeleting], error: &coordinatorError) { url in
+                do {
+                    try FileManager.default.removeItem(at: url)
+                    successfullyRemoved = true
+                } catch {
+                    self.logger.error("Error removing storage file: \(error)")
+                    assertionFailure()
+                    successfullyRemoved = false
+                }
+            }
+            if let coordinatorError {
+                self.logger.error("Error coordinating storage file removal: \(coordinatorError)")
+                assertionFailure()
+                return
+            } else if !successfullyRemoved {
+                self.logger.error("Unable to remove storage file")
+                assertionFailure()
+                return
+            }
+            
+            NotificationCenter.default.post(name: Self.didChangeNotification, object: self, userInfo: nil)
+        }
+        
+    }
+    
     /// Migrates specified keys from the specified instance of `UserDefaults` into this instance of `TinyStorage` and stores to disk. As `UserDefaults` stores boolean values as 0 or 1 behind the scenes (so it's impossible to know if `1` refers to `true` or the integer value `1`, and `Codable` does care), you will need to specify which keys store Bool and which store non-boolean values in order for the migration to occur. If the key's value is improperly matched or unable to be decoded the logger will print an error and the key will be skipped.
     ///
     /// - Parameters:
