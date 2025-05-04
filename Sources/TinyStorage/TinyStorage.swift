@@ -82,24 +82,24 @@ public final class TinyStorage: @unchecked Sendable {
     public func retrieveOrThrow<T: Codable>(type: T.Type, forKey key: any TinyStorageKey, defaultValue: T? = nil) throws -> T? {
         return try dispatchQueue.sync {
             guard let data = dictionaryRepresentation[key.rawValue] else {
-                logger.info("No key \(key.rawValue, privacy: .private) found in storage")
+//                logger.info("No key \(key.rawValue, privacy: .private) found in storage")
                 
-                if let defaultValue {
-                    let valueData: Data
-                    
-                    if let data = defaultValue as? Data {
-                        // Given value is already of type Data, so use directly
-                        valueData = data
-                    } else {
-                        valueData = try JSONEncoder().encode(defaultValue)
-                    }
-                    
-                    dictionaryRepresentation[key.rawValue] = valueData
-                    defer {
-                        storeToDisk()
-                    }
-                    return defaultValue
-                }
+//                if let defaultValue {
+//                    let valueData: Data
+//                    
+//                    if let data = defaultValue as? Data {
+//                        // Given value is already of type Data, so use directly
+//                        valueData = data
+//                    } else {
+//                        valueData = try JSONEncoder().encode(defaultValue)
+//                    }
+//                    
+//                    dictionaryRepresentation[key.rawValue] = valueData
+//                    defer {
+//                        storeToDisk()
+//                    }
+//                    return defaultValue
+//                }
                 
                 
                 return nil
