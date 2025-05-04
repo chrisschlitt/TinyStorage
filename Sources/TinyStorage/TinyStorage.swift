@@ -505,7 +505,7 @@ public final class TinyStorage: @unchecked Sendable {
         }
 
         // Even though atomic deletes the file, DispatchSource still picks this up as a write change, rather than a delete
-        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fileDescriptor, eventMask: [.write], queue: .main)
+        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fileDescriptor, eventMask: [.write], queue: .global())
         self.source = source
         
         source.setEventHandler { [weak self] in
