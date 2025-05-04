@@ -559,21 +559,22 @@ public final class TinyStorage: @unchecked Sendable {
     /// Responds to the file change event
     private func processFileChangeEvent() {
         logger.info("Processing a files changed event")
-        var actualChangeOccurred = false
         
-        dispatchQueue.sync {
-            let newDictionaryRepresentation = TinyStorage.retrieveStorageDictionary(directoryURL: directoryURL, fileURL: fileURL, logger: logger) ?? [:]
+        dispatchQueue.async {
+            var actualChangeOccurred = false
+            let newDictionaryRepresentation = TinyStorage.retrieveStorageDictionary(directoryURL: self.directoryURL, fileURL: self.fileURL, logger: self.logger) ?? [:]
             
             // Ensure something actually changed
             if self.dictionaryRepresentation != newDictionaryRepresentation {
                 self.dictionaryRepresentation = newDictionaryRepresentation
                 actualChangeOccurred = true
             }
+            
+            if actualChangeOccurred {
+                NotificationCenter.default.post(name: Self.didChangeNotification, object: self, userInfo: nil)
+            }
         }
         
-        if actualChangeOccurred {
-            NotificationCenter.default.post(name: Self.didChangeNotification, object: self, userInfo: nil)
-        }
     }
     
     /// Helper function to perform a preliminary check if a key should be skipped for migration
