@@ -307,7 +307,7 @@ public final class TinyStorage: @unchecked Sendable {
                 return
             }
             
-//            NotificationCenter.default.post(name: Self.didChangeNotification, object: self, userInfo: nil)
+            NotificationCenter.default.post(name: Self.didChangeNotification, object: self, userInfo: nil)
         }
         
     }
@@ -614,9 +614,9 @@ public final class TinyStorage: @unchecked Sendable {
     private func processFileChangeEvent() {
         logger.info("Processing a files changed event")
         
+        let newDictionaryRepresentation = TinyStorage.retrieveStorageDictionary(directoryURL: self.directoryURL, fileURL: self.fileURL, logger: self.logger) ?? [:]
         dispatchQueue.async {
             var actualChangeOccurred = false
-            let newDictionaryRepresentation = TinyStorage.retrieveStorageDictionary(directoryURL: self.directoryURL, fileURL: self.fileURL, logger: self.logger) ?? [:]
             
             // Ensure something actually changed
             if self.dictionaryRepresentation != newDictionaryRepresentation {
