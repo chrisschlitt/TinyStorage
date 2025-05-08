@@ -28,7 +28,7 @@ public final class TinyStorage: @unchecked Sendable {
     private var dictionaryRepresentation: [String: Data]
     
     /// Coordinates access to in-memory store
-    private let dispatchQueue = DispatchQueue(label: "TinyStorageInMemory")
+    private let dispatchQueue = DispatchQueue(label: "TinyStorageInMemory", attributes: .concurrent)
     
     private var source: DispatchSourceFileSystemObject?
     
@@ -173,13 +173,13 @@ public final class TinyStorage: @unchecked Sendable {
                 valueData = try JSONEncoder().encode(value)
             }
             
-            dispatchQueue.sync {
+            dispatchQueue.sync(flags: .barrier) {
                 dictionaryRepresentation[key.rawValue] = valueData
                 
                 storeToDisk()
             }
         } else {
-            dispatchQueue.sync {
+            dispatchQueue.sync(flags: .barrier) {
                 dictionaryRepresentation.removeValue(forKey: key.rawValue)
                 storeToDisk()
             }
@@ -200,13 +200,13 @@ public final class TinyStorage: @unchecked Sendable {
                 valueData = try JSONEncoder().encode(value)
             }
             
-            dispatchQueue.async {
+            dispatchQueue.async(flags: .barrier) {
                 self.dictionaryRepresentation[key.rawValue] = valueData
                 
                 self.storeToDisk()
             }
         } else {
-            dispatchQueue.async {
+            dispatchQueue.async(flags: .barrier) {
                 self.dictionaryRepresentation.removeValue(forKey: key.rawValue)
                 self.storeToDisk()
             }
@@ -251,7 +251,7 @@ public final class TinyStorage: @unchecked Sendable {
         var coordinatorError: NSError?
         var successfullyRemoved = false
         
-        dispatchQueue.sync {
+        dispatchQueue.sync(flags: .barrier) {
             coordinator.coordinate(writingItemAt: fileURL, options: [.forDeleting], error: &coordinatorError) { url in
                 do {
                     try FileManager.default.removeItem(at: url)
@@ -281,7 +281,7 @@ public final class TinyStorage: @unchecked Sendable {
         guard !Self.isBeingUsedInXcodePreview else { return }
         
         
-        dispatchQueue.async {
+        dispatchQueue.async(flags: .barrier) {
             
             let coordinator = NSFileCoordinator()
             var coordinatorError: NSError?
@@ -332,7 +332,7 @@ public final class TinyStorage: @unchecked Sendable {
     /// 8. This function could theoretically fetch all the keys in `UserDefaults`, but `UserDefaults` stores a lot of data that Apple/iOS put in there that doesn't necessarily pertain to your app/need to be stored in `TinyStorage`, so it's required that you pass a set of keys for the keys you want to migrate.
     /// 9. `UserDefaults` has functions `integer/double(forKey:)` and a corresponding `Bool` method that return `0` and `false` respectively if no key is present (as does TinyStorage) but as part of migration TinyStorage will not store 0/false, for the value if the key is not present, it will simply return skip the key, storing nothing for it.
     public func migrate(userDefaults: UserDefaults, nonBoolKeys: Set<String>, boolKeys: Set<String>, overwriteTinyStorageIfConflict: Bool) {
-        dispatchQueue.sync {
+        dispatchQueue.sync(flags: .barrier) {
             logger.info("Migrating Bool keys")
             
             for boolKey in boolKeys {
@@ -378,7 +378,7 @@ public final class TinyStorage: @unchecked Sendable {
     ///
     /// - Note: From what I understand Codable is already inherently optional due to Optional being Codable so this just makes it more explicit to the compiler so we can unwrap it easier, in other words there's no way to make it so folks can't pass in non-optional Codables when used as an existential (see: https://mastodon.social/@christianselig/113279213464286112)
     public func bulkStore<U: TinyStorageKey>(items: [U: (any Codable)?], skipKeyIfAlreadyPresent: Bool = false) {
-        dispatchQueue.sync {
+        dispatchQueue.sync(flags: .barrier) {
             for item in items {
                 if skipKeyIfAlreadyPresent && dictionaryRepresentation[item.key.rawValue] != nil { continue }
                 
