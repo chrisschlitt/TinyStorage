@@ -28,7 +28,7 @@ public final class TinyStorage: @unchecked Sendable {
     private var dictionaryRepresentation: [String: Data]
     
     /// Coordinates access to in-memory store
-    private let dispatchQueue = DispatchQueue(label: "TinyStorageInMemory", attributes: .concurrent)
+    private let dispatchQueue = DispatchQueue(label: "TinyStorageInMemory", qos: .userInitiated, attributes: .concurrent)
     
     private var source: DispatchSourceFileSystemObject?
     
