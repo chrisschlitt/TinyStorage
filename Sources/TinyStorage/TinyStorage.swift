@@ -18,17 +18,15 @@ import OSLog
 /// - Does NOT use NSFilePresenter due to me being scared. Uses DispatchSource to watch and respond to changes to the backing file.
 /// - Internally data is stored as [String: Data] where Data is expected to be Codable (otherwise will error), this is to minimize needing to unmarshal the entire top-level dictionary into Codable objects for each key request/write. We store this [String: Data] object as a binary plist to disk as [String: Data] is not JSON encodable due to Data not being JSON
 /// - Uses OSLog for logging
+@MainActor
 @Observable
-public final class TinyStorage: @unchecked Sendable {
+public final class TinyStorage {
     private let directoryURL: URL
     public let fileURL: URL
     
     /// Private in-memory store so each request doesn't have to go to disk.
     /// Note that as Data is stored (implementation oddity, using Codable you can't encode an abstract [String: any Codable] to Data) rather than the Codable object directly, it is decoded before being returned.
     private var dictionaryRepresentation: [String: Data]
-    
-    /// Coordinates access to in-memory store
-    private let dispatchQueue = DispatchQueue(label: "TinyStorageInMemory", qos: .userInitiated, attributes: .concurrent)
     
     private var source: DispatchSourceFileSystemObject?
     
@@ -39,8 +37,9 @@ public final class TinyStorage: @unchecked Sendable {
     private static let isBeingUsedInXcodePreview: Bool = ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
     
     /// All keys currently present in storage
+    @MainActor
     public var allKeys: [any TinyStorageKey] {
-        dispatchQueue.sync { return Array(dictionaryRepresentation.keys) }
+        return Array(dictionaryRepresentation.keys)
     }
     
     /// Initialize an instance of `TinyStorage` for you to use.
@@ -68,8 +67,8 @@ public final class TinyStorage: @unchecked Sendable {
     }
     
     deinit {
-        logger.info("Deinitializing TinyStorage")
-        source?.cancel()
+//        logger.info("Deinitializing TinyStorage")
+//        source?.cancel()
     }
     
     // MARK: - Public API
@@ -79,38 +78,37 @@ public final class TinyStorage: @unchecked Sendable {
     /// - Parameters:
     ///   - type: The `Codable`-conforming type that the retrieved value should be decoded into.
     ///   - key: The key at which the value is stored.
+    @MainActor
     public func retrieveOrThrow<T: Codable>(type: T.Type, forKey key: any TinyStorageKey, defaultValue: T? = nil) throws -> T? {
-        return try dispatchQueue.sync {
-            guard let data = dictionaryRepresentation[key.rawValue] else {
+        guard let data = dictionaryRepresentation[key.rawValue] else {
 //                logger.info("No key \(key.rawValue, privacy: .private) found in storage")
-                
+            
 //                if let defaultValue {
 //                    let valueData: Data
-//                    
+//
 //                    if let data = defaultValue as? Data {
 //                        // Given value is already of type Data, so use directly
 //                        valueData = data
 //                    } else {
 //                        valueData = try JSONEncoder().encode(defaultValue)
 //                    }
-//                    
+//
 //                    dictionaryRepresentation[key.rawValue] = valueData
 //                    defer {
 //                        storeToDisk()
 //                    }
 //                    return defaultValue
 //                }
-                
-                
-                return nil
-            }
             
-            if type == Data.self {
-                // This should never fail, as Data is Codable and the the type is Data, but the compiler does not know that T is explicitly data (and I don't believe there's a way to mark this) so the cast is required
-                return data as? T
-            } else {
-                return try JSONDecoder().decode(T.self, from: data)
-            }
+            
+            return nil
+        }
+        
+        if type == Data.self {
+            // This should never fail, as Data is Codable and the the type is Data, but the compiler does not know that T is explicitly data (and I don't believe there's a way to mark this) so the cast is required
+            return data as? T
+        } else {
+            return try JSONDecoder().decode(T.self, from: data)
         }
     }
     
@@ -119,6 +117,7 @@ public final class TinyStorage: @unchecked Sendable {
     /// - Parameters:
     ///   - type: The `Codable`-conforming type that the retrieved value should be decoded into.
     ///   - key: The key at which the value is stored.
+    @MainActor
     public func retrieve<T: Codable>(type: T.Type, forKey key: any TinyStorageKey, defaultValue: T? = nil) -> T? {
         do {
             return try retrieveOrThrow(type: type, forKey: key, defaultValue: defaultValue)
@@ -132,6 +131,7 @@ public final class TinyStorage: @unchecked Sendable {
     /// Helper function that retrieves the object at the key and if it's a non-nil `Bool` will return its value, but if it's `nil`, will return `false`. Akin to `UserDefaults`' `bool(forKey:)` method.
     ///
     /// - Note: If there is a type mismatch (for instance the object stored at the key is a `Double`) will still return `false`, so you need to have confidence it was stored correctly.
+    @MainActor
     public func bool(forKey key: any TinyStorageKey) -> Bool {
         retrieve(type: Bool.self, forKey: key) ?? false
     }
@@ -139,11 +139,13 @@ public final class TinyStorage: @unchecked Sendable {
     /// Helper function that retrieves the object at the key and if it's a non-nil `Int` will return its value, but if it's `nil`, will return `0`. Akin to `UserDefaults`' `integer(forKey:)` method.
     ///
     /// - Note: If there is a type mismatch (for instance the object stored at the key is a `String`) will still return `0`, so you need to have confidence it was stored correctly.
+    @MainActor
     public func integer(forKey key: any TinyStorageKey) -> Int {
         retrieve(type: Int.self, forKey: key) ?? 0
     }
     
     /// Helper function that retrieves the object at the key and increments it before saving it back to storage and returns the newly incremented value. If no value is present at the key or there is a non `Int` value stored at the key, this function will assume you intended to initialize the value and thus write `1` to the key.
+    @MainActor
     @discardableResult
     public func incrementInteger(forKey key: any TinyStorageKey, by incrementBy: Int = 1) -> Int {
         if var value = retrieve(type: Int.self, forKey: key) {
@@ -173,16 +175,12 @@ public final class TinyStorage: @unchecked Sendable {
                 valueData = try JSONEncoder().encode(value)
             }
             
-            dispatchQueue.sync(flags: .barrier) {
-                dictionaryRepresentation[key.rawValue] = valueData
-                
-                storeToDisk()
-            }
+            dictionaryRepresentation[key.rawValue] = valueData
+            
+            storeToDisk()
         } else {
-            dispatchQueue.sync(flags: .barrier) {
-                dictionaryRepresentation.removeValue(forKey: key.rawValue)
-                storeToDisk()
-            }
+            dictionaryRepresentation.removeValue(forKey: key.rawValue)
+            storeToDisk()
         }
         
         NotificationCenter.default.post(name: Self.didChangeNotification, object: self, userInfo: nil)
@@ -200,16 +198,12 @@ public final class TinyStorage: @unchecked Sendable {
                 valueData = try JSONEncoder().encode(value)
             }
             
-            dispatchQueue.async(flags: .barrier) {
-                self.dictionaryRepresentation[key.rawValue] = valueData
-                
-                self.storeToDisk()
-            }
+            self.dictionaryRepresentation[key.rawValue] = valueData
+            
+            self.storeToDisk()
         } else {
-            dispatchQueue.async(flags: .barrier) {
-                self.dictionaryRepresentation.removeValue(forKey: key.rawValue)
-                self.storeToDisk()
-            }
+            self.dictionaryRepresentation.removeValue(forKey: key.rawValue)
+            self.storeToDisk()
         }
         
         NotificationCenter.default.post(name: Self.didChangeNotification, object: self, userInfo: nil)
@@ -251,16 +245,14 @@ public final class TinyStorage: @unchecked Sendable {
         var coordinatorError: NSError?
         var successfullyRemoved = false
         
-        dispatchQueue.sync(flags: .barrier) {
-            coordinator.coordinate(writingItemAt: fileURL, options: [.forDeleting], error: &coordinatorError) { url in
-                do {
-                    try FileManager.default.removeItem(at: url)
-                    successfullyRemoved = true
-                } catch {
-                    logger.error("Error removing storage file: \(error)")
-                    assertionFailure()
-                    successfullyRemoved = false
-                }
+        coordinator.coordinate(writingItemAt: fileURL, options: [.forDeleting], error: &coordinatorError) { url in
+            do {
+                try FileManager.default.removeItem(at: url)
+                successfullyRemoved = true
+            } catch {
+                logger.error("Error removing storage file: \(error)")
+                assertionFailure()
+                successfullyRemoved = false
             }
         }
         
@@ -280,35 +272,32 @@ public final class TinyStorage: @unchecked Sendable {
     public func resetAsync() {
         guard !Self.isBeingUsedInXcodePreview else { return }
         
+            
+        let coordinator = NSFileCoordinator()
+        var coordinatorError: NSError?
+        var successfullyRemoved = false
         
-        dispatchQueue.async(flags: .barrier) {
-            
-            let coordinator = NSFileCoordinator()
-            var coordinatorError: NSError?
-            var successfullyRemoved = false
-            
-            coordinator.coordinate(writingItemAt: self.fileURL, options: [.forDeleting], error: &coordinatorError) { url in
-                do {
-                    try FileManager.default.removeItem(at: url)
-                    successfullyRemoved = true
-                } catch {
-                    self.logger.error("Error removing storage file: \(error)")
-                    assertionFailure()
-                    successfullyRemoved = false
-                }
-            }
-            if let coordinatorError {
-                self.logger.error("Error coordinating storage file removal: \(coordinatorError)")
+        coordinator.coordinate(writingItemAt: self.fileURL, options: [.forDeleting], error: &coordinatorError) { url in
+            do {
+                try FileManager.default.removeItem(at: url)
+                successfullyRemoved = true
+            } catch {
+                self.logger.error("Error removing storage file: \(error)")
                 assertionFailure()
-                return
-            } else if !successfullyRemoved {
-                self.logger.error("Unable to remove storage file")
-                assertionFailure()
-                return
+                successfullyRemoved = false
             }
-            
-            NotificationCenter.default.post(name: Self.didChangeNotification, object: self, userInfo: nil)
         }
+        if let coordinatorError {
+            self.logger.error("Error coordinating storage file removal: \(coordinatorError)")
+            assertionFailure()
+            return
+        } else if !successfullyRemoved {
+            self.logger.error("Unable to remove storage file")
+            assertionFailure()
+            return
+        }
+        
+        NotificationCenter.default.post(name: Self.didChangeNotification, object: self, userInfo: nil)
         
     }
     
@@ -332,40 +321,39 @@ public final class TinyStorage: @unchecked Sendable {
     /// 8. This function could theoretically fetch all the keys in `UserDefaults`, but `UserDefaults` stores a lot of data that Apple/iOS put in there that doesn't necessarily pertain to your app/need to be stored in `TinyStorage`, so it's required that you pass a set of keys for the keys you want to migrate.
     /// 9. `UserDefaults` has functions `integer/double(forKey:)` and a corresponding `Bool` method that return `0` and `false` respectively if no key is present (as does TinyStorage) but as part of migration TinyStorage will not store 0/false, for the value if the key is not present, it will simply return skip the key, storing nothing for it.
     public func migrate(userDefaults: UserDefaults, nonBoolKeys: Set<String>, boolKeys: Set<String>, overwriteTinyStorageIfConflict: Bool) {
-        dispatchQueue.sync(flags: .barrier) {
-            logger.info("Migrating Bool keys")
-            
-            for boolKey in boolKeys {
-                guard let object = userDefaults.object(forKey: boolKey) else {
-                    logger.warning("Requested migration of \(boolKey) but it was not found in your UserDefaults instance")
-                    continue
-                }
+        
+        logger.info("Migrating Bool keys")
+        
+        for boolKey in boolKeys {
+            guard let object = userDefaults.object(forKey: boolKey) else {
+                logger.warning("Requested migration of \(boolKey) but it was not found in your UserDefaults instance")
+                continue
+            }
 
-                if shouldSkipKeyDuringMigration(key: boolKey, overwriteTinyStorageIfConflict: overwriteTinyStorageIfConflict) {
-                    continue
-                }
-                
-                migrateBool(boolKey: boolKey, object: object)
+            if shouldSkipKeyDuringMigration(key: boolKey, overwriteTinyStorageIfConflict: overwriteTinyStorageIfConflict) {
+                continue
             }
             
-            logger.info("Migrating non-Bool keys")
-            
-            for nonBoolKey in nonBoolKeys {
-                guard let object = userDefaults.object(forKey: nonBoolKey) else {
-                    logger.warning("Requested migration of \(nonBoolKey) but it was not found in your UserDefaults instance")
-                    continue
-                }
-
-                if shouldSkipKeyDuringMigration(key: nonBoolKey, overwriteTinyStorageIfConflict: overwriteTinyStorageIfConflict) {
-                    continue
-                }
-                
-                migrateNonBool(nonBoolKey: nonBoolKey, object: object)
-            }
-            
-            storeToDisk()
-            logger.info("Completed migration of bool and non-bool keys from UserDefaults")
+            migrateBool(boolKey: boolKey, object: object)
         }
+        
+        logger.info("Migrating non-Bool keys")
+        
+        for nonBoolKey in nonBoolKeys {
+            guard let object = userDefaults.object(forKey: nonBoolKey) else {
+                logger.warning("Requested migration of \(nonBoolKey) but it was not found in your UserDefaults instance")
+                continue
+            }
+
+            if shouldSkipKeyDuringMigration(key: nonBoolKey, overwriteTinyStorageIfConflict: overwriteTinyStorageIfConflict) {
+                continue
+            }
+            
+            migrateNonBool(nonBoolKey: nonBoolKey, object: object)
+        }
+        
+        storeToDisk()
+        logger.info("Completed migration of bool and non-bool keys from UserDefaults")
         
         NotificationCenter.default.post(name: Self.didChangeNotification, object: self, userInfo: nil)
     }
@@ -378,36 +366,34 @@ public final class TinyStorage: @unchecked Sendable {
     ///
     /// - Note: From what I understand Codable is already inherently optional due to Optional being Codable so this just makes it more explicit to the compiler so we can unwrap it easier, in other words there's no way to make it so folks can't pass in non-optional Codables when used as an existential (see: https://mastodon.social/@christianselig/113279213464286112)
     public func bulkStore<U: TinyStorageKey>(items: [U: (any Codable)?], skipKeyIfAlreadyPresent: Bool = false) {
-        dispatchQueue.sync(flags: .barrier) {
-            for item in items {
-                if skipKeyIfAlreadyPresent && dictionaryRepresentation[item.key.rawValue] != nil { continue }
-                
-                let valueData: Data
-                
-                if let itemValue = item.value {
-                    if let data = item.value as? Data {
-                        // Given value is already of type Data, so use directly
-                        valueData = data
-                    } else {
-                        do {
-                            valueData = try JSONEncoder().encode(itemValue)
-                        } catch {
-                            logger.error("Error bulk encoding new value for migration: \(String(describing: itemValue), privacy: .private), with error: \(error)")
-                            assertionFailure()
-                            continue
-                        }
-                    }
-                } else {
-                    // Nil value, indicating desire to remove
-                    dictionaryRepresentation.removeValue(forKey: item.key.rawValue)
-                    continue
-                }
-
-                dictionaryRepresentation[item.key.rawValue] = valueData
-            }
+        for item in items {
+            if skipKeyIfAlreadyPresent && dictionaryRepresentation[item.key.rawValue] != nil { continue }
             
-            storeToDisk()
+            let valueData: Data
+            
+            if let itemValue = item.value {
+                if let data = item.value as? Data {
+                    // Given value is already of type Data, so use directly
+                    valueData = data
+                } else {
+                    do {
+                        valueData = try JSONEncoder().encode(itemValue)
+                    } catch {
+                        logger.error("Error bulk encoding new value for migration: \(String(describing: itemValue), privacy: .private), with error: \(error)")
+                        assertionFailure()
+                        continue
+                    }
+                }
+            } else {
+                // Nil value, indicating desire to remove
+                dictionaryRepresentation.removeValue(forKey: item.key.rawValue)
+                continue
+            }
+
+            dictionaryRepresentation[item.key.rawValue] = valueData
         }
+        
+        storeToDisk()
         
         NotificationCenter.default.post(name: Self.didChangeNotification, object: self, userInfo: nil)
     }
@@ -595,7 +581,7 @@ public final class TinyStorage: @unchecked Sendable {
         }
 
         // Even though atomic deletes the file, DispatchSource still picks this up as a write change, rather than a delete
-        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fileDescriptor, eventMask: [.write], queue: .global())
+        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fileDescriptor, eventMask: [.write], queue: .main)
         self.source = source
         
         source.setEventHandler { [weak self] in
@@ -614,19 +600,17 @@ public final class TinyStorage: @unchecked Sendable {
     private func processFileChangeEvent() {
         logger.info("Processing a files changed event")
         
-        dispatchQueue.async {
-            var actualChangeOccurred = false
-            let newDictionaryRepresentation = TinyStorage.retrieveStorageDictionary(directoryURL: self.directoryURL, fileURL: self.fileURL, logger: self.logger) ?? [:]
-            
-            // Ensure something actually changed
-            if self.dictionaryRepresentation != newDictionaryRepresentation {
-                self.dictionaryRepresentation = newDictionaryRepresentation
-                actualChangeOccurred = true
-            }
-            
-            if actualChangeOccurred {
-                NotificationCenter.default.post(name: Self.didChangeNotification, object: self, userInfo: nil)
-            }
+        var actualChangeOccurred = false
+        let newDictionaryRepresentation = TinyStorage.retrieveStorageDictionary(directoryURL: self.directoryURL, fileURL: self.fileURL, logger: self.logger) ?? [:]
+        
+        // Ensure something actually changed
+        if self.dictionaryRepresentation != newDictionaryRepresentation {
+            self.dictionaryRepresentation = newDictionaryRepresentation
+            actualChangeOccurred = true
+        }
+        
+        if actualChangeOccurred {
+            NotificationCenter.default.post(name: Self.didChangeNotification, object: self, userInfo: nil)
         }
         
     }
@@ -858,11 +842,13 @@ public struct TinyStorageItem<T: Codable & Sendable>: DynamicProperty, Sendable 
         self.key = key
     }
     
+    @MainActor
     public var wrappedValue: T {
         get { storage.retrieve(type: T.self, forKey: key) ?? defaultValue }
         nonmutating set { storage.store(newValue, forKey: key) }
     }
     
+    @MainActor
     public var projectedValue: Binding<T> {
         Binding(
             get: { wrappedValue },
